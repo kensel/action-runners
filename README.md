@@ -9,7 +9,7 @@ Jobs start with their toolchains already installed, so CI time goes to building 
 
 | Image (`images/<name>`) | Pin this tag | Contents |
 |---|---|---|
-| `rust-cross` | `kensel/action-runners:rust-cross-1.98.0` | Ubuntu 26.04 (same release as the `ubuntu-26.04` hosted runner), Rust 1.98.0 (clippy, rustfmt) with musl targets x86_64 / armv7 / aarch64, `gcc-arm-linux-gnueabihf` + `gcc-aarch64-linux-gnu`, `qemu-user` (with `qemu-*-static` names), `file`/`readelf`, Python 3, Node 24, git, jq, zstd, sudo |
+| `rust-cross` | `kensel/action-runners:rust-cross-1.98.0` | Ubuntu 26.04 (same release as the `ubuntu-26.04` hosted runner), Rust 1.98.0 (clippy, rustfmt) with musl targets x86_64 / armv7 / aarch64, `gcc-arm-linux-gnueabihf` + `gcc-aarch64-linux-gnu`, `qemu-user` (with `qemu-*-static` names), `file`/`readelf`, Python 3, Node 26 LTS, git, jq, zstd, sudo |
 
 Each image is published under three tags:
 

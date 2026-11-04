@@ -3,14 +3,14 @@
 # aarch64 (filecat-agent). Everything the CI used to install on every run is baked in:
 # the pinned Rust toolchain + musl targets + clippy, the ARM GNU cross gcc (ring compiles C and
 # gcc is the linker driver), qemu-user for the ARM tests, readelf/file for artefact checks,
-# and Node (GitHub mounts its own; Gitea act_runner runs JS actions with the container's node).
+# and Node 26 LTS (GitHub runs actions with its own Node 24; Gitea act_runner uses this one).
 ARG BASE_IMAGE=ubuntu:26.04
 FROM ${BASE_IMAGE}
 
 ARG RUST_VERSION=1.98.0
 ARG RUST_TARGETS="x86_64-unknown-linux-musl armv7-unknown-linux-musleabihf aarch64-unknown-linux-musl"
 ARG RUST_COMPONENTS="clippy rustfmt"
-ARG NODE_MAJOR=24
+ARG NODE_MAJOR=26
 
 ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \
