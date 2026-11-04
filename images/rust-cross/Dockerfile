@@ -2,9 +2,9 @@
 # Job container for Rust builds that cross-compile static musl binaries for x86_64, armv7 and
 # aarch64 (filecat-agent). Everything the CI used to install on every run is baked in:
 # the pinned Rust toolchain + musl targets + clippy, the ARM GNU cross gcc (ring compiles C and
-# gcc is the linker driver), qemu-user-static for the ARM tests, readelf/file for artefact checks,
+# gcc is the linker driver), qemu-user for the ARM tests, readelf/file for artefact checks,
 # and Node (GitHub mounts its own; Gitea act_runner runs JS actions with the container's node).
-ARG BASE_IMAGE=ubuntu:24.04
+ARG BASE_IMAGE=ubuntu:26.04
 FROM ${BASE_IMAGE}
 
 ARG RUST_VERSION=1.98.0
@@ -19,13 +19,20 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TERM_COLOR=always \
     CARGO_INCREMENTAL=0
 
+# Ubuntu 26.04: qemu-user-static is an empty transitional package; qemu-user ships the static
+# emulators as qemu-arm / qemu-aarch64. The old -static names are linked back in because
+# filecat's build.sh and cargo-config.toml use them.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl git git-lfs openssh-client jq unzip xz-utils zstd tar gzip \
       build-essential pkg-config file binutils python3 sudo \
       gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu \
-      qemu-user-static \
- && rm -rf /var/lib/apt/lists/*
+      qemu-user \
+ && rm -rf /var/lib/apt/lists/* \
+ && for a in arm aarch64; do \
+      [ -e "/usr/bin/qemu-$a-static" ] || ln -s "qemu-$a" "/usr/bin/qemu-$a-static"; \
+    done \
+ && qemu-arm-static --version | head -n1 && qemu-aarch64-static --version | head -n1
 
 # Node: latest release of the major line, checksum-verified against nodejs.org's SHASUMS256.
 RUN set -eu; \

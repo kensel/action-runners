@@ -19,7 +19,7 @@ TOML
 printf 'int smoke_add(int a, int b) { return a + b; }\n' > smoke.c
 printf 'fn main() { cc::Build::new().file("smoke.c").compile("smoke"); }\n' > build.rs
 cat > src/main.rs <<'RS'
-extern "C" { fn smoke_add(a: i32, b: i32) -> i32; }
+unsafe extern "C" { fn smoke_add(a: i32, b: i32) -> i32; }
 fn main() { println!("smoke {} {}", std::env::consts::ARCH, unsafe { smoke_add(40, 2) }); }
 RS
 for t in x86_64-unknown-linux-musl armv7-unknown-linux-musleabihf aarch64-unknown-linux-musl; do
