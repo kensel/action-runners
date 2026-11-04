@@ -1,0 +1,80 @@
+name: Build runner images
+
+# Builds images/<name>/ and pushes kensel/action-runners:<name>-<TAG> (plus -<sha> and <name>)
+# to Docker Hub. Pull requests only build and smoke-test. A push to main rebuilds the images
+# whose directory changed.
+# Repository settings: secret DOCKERHUB_TOKEN (Docker Hub access token, read/write);
+# optional variable DOCKERHUB_USERNAME (defaults to kensel).
+
+on:
+  push:
+    branches: [main]
+    paths: ["images/**", "scripts/**", ".github/workflows/build-images.yml"]
+  pull_request:
+    paths: ["images/**", "scripts/**", ".github/workflows/build-images.yml"]
+  schedule:
+    - cron: "17 4 1 * *"   # monthly: pick up base-image security updates
+  workflow_dispatch:
+    inputs:
+      images:
+        description: "Space-separated image names (blank = all)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REPO: kensel/action-runners
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.plan.outputs.images }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ github.event.inputs.images }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          case "$EVENT" in
+            push) images=$(scripts/changed-images.sh "$BEFORE") ;;
+            pull_request) images=$(scripts/changed-images.sh "$PR_BASE") ;;
+            workflow_dispatch)
+              if [ -n "$INPUT" ]; then images=$(printf '%s\n' $INPUT | jq -R . | jq -sc .)
+              else images=$(scripts/changed-images.sh); fi ;;
+            *) images=$(scripts/changed-images.sh) ;;
+          esac
+          echo "images=$images" | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.plan.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME || 'kensel' }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build, smoke-test, push
+        env:
+          GIT_SHA: ${{ github.sha }}
+          PUSH: ${{ github.event_name != 'pull_request' && '--push' || '' }}
+          IMAGE: ${{ matrix.image }}
+        run: scripts/build.sh --test $PUSH "$IMAGE"

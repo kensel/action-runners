@@ -1,0 +1,53 @@
+# How filecat's Rust jobs (.github/workflows/ci.yml and release.yml in kensel/filecat) use the
+# image. Each job runs in the container, so these steps go away:
+#   - dtolnay/rust-toolchain (toolchain + 3 musl targets + clippy download on every run)
+#   - `sudo apt-get update && sudo apt-get install gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu`
+#   - the qemu-user-static install in agent-arm-tests
+# Keep Swatinem/rust-cache: it caches the crates and target/, and the image doesn't hold those.
+# Pin the tag to RUST_TOOLCHAIN. When you bump Rust, bump images/rust-cross/image.env first.
+
+jobs:
+  agent:
+    name: agent (Rust)
+    runs-on: ubuntu-latest
+    container: kensel/action-runners:rust-cross-1.98.0
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      # ... the remaining steps stay as they are (./build.sh all, file/readelf checks, upload-artifact)
+
+  agent-arm-tests:
+    name: agent tests under qemu (${{ matrix.target }})
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    container: kensel/action-runners:rust-cross-1.98.0
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [armv7, aarch64]
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+          key: arm-${{ matrix.target }}
+      - run: ./build.sh test ${{ matrix.target }}
+
+# Gitea (act_runner): same YAML. Either keep `container:` as above, or have the runner use the
+# image for a label directly in act_runner's config.yaml:
+#   runner:
+#     labels:
+#       - "rust-cross:docker://kensel/action-runners:rust-cross-1.98.0"
+# and write `runs-on: rust-cross` with no `container:`. A self-hosted runner keeps the pulled
+# image in its local Docker cache, so later jobs start without downloading it again.

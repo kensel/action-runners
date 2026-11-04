@@ -1,0 +1,2 @@
+# Scripts are copied into Linux images: never let Windows checkouts add CRLF.
+* text=auto eol=lf
