@@ -1,7 +1,8 @@
-name: Build runner images
+name: Release runner images
 
 # Gitea Actions version of .github/workflows/build-images.yml. When .gitea/workflows exists,
-# Gitea reads it and ignores .github/workflows. Pushes the same kensel/action-runners tags.
+# Gitea reads it and ignores .github/workflows. Runs only on v* tags and pushes the same
+# kensel/action-runners tags to Docker Hub.
 #
 # act_runner requirements: the job container needs the Docker CLI and the host's Docker socket.
 # The default ubuntu-latest label images (gitea/runner-images, catthehacker/ubuntu:act-*) include
@@ -9,64 +10,32 @@ name: Build runner images
 #   container:
 #     valid_volumes: ["/var/run/docker.sock"]
 #     options: "-v /var/run/docker.sock:/var/run/docker.sock"
-# Repository settings: secret DOCKERHUB_TOKEN; optional variable DOCKERHUB_USERNAME (default kensel).
+# Repository settings: secret DOCKERHUB_TOKEN; variable DOCKERHUB_USERNAME (kensel).
 # If this repo is mirrored to both GitHub and Gitea, set variable PUSH_IMAGES=false on one side
 # so the two don't race to push the same tags.
 
 on:
   push:
-    branches: [main]
-    paths: ["images/**", "scripts/**", ".gitea/workflows/build-images.yml"]
-  pull_request:
-    paths: ["images/**", "scripts/**", ".gitea/workflows/build-images.yml"]
-  schedule:
-    - cron: "17 4 1 * *"
-  workflow_dispatch:
-    inputs:
-      images:
-        description: "Space-separated image names (blank = all)"
-        required: false
+    tags: ["v*"]
 
 env:
   REPO: kensel/action-runners
 
 jobs:
-  build:
+  publish:
+    if: vars.PUSH_IMAGES != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - name: Pick images
-        id: plan
-        env:
-          EVENT: ${{ gitea.event_name }}
-          INPUT: ${{ gitea.event.inputs.images }}
-          BEFORE: ${{ gitea.event.before }}
-          PR_BASE: ${{ gitea.event.pull_request.base.sha }}
-        run: |
-          case "$EVENT" in
-            push) json=$(scripts/changed-images.sh "$BEFORE") ;;
-            pull_request) json=$(scripts/changed-images.sh "$PR_BASE") ;;
-            workflow_dispatch)
-              if [ -n "$INPUT" ]; then json=$(printf '%s\n' $INPUT | jq -R . | jq -sc .)
-              else json=$(scripts/changed-images.sh); fi ;;
-            *) json=$(scripts/changed-images.sh) ;;
-          esac
-          echo "images=$(echo "$json" | jq -r 'join(" ")')" | tee -a "$GITHUB_OUTPUT"
       - name: Log in to Docker Hub
-        if: steps.plan.outputs.images != '' && gitea.event_name != 'pull_request' && vars.PUSH_IMAGES != 'false'
         env:
           DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || 'kensel' }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: printf %s "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-      - name: Build, smoke-test, push
-        if: steps.plan.outputs.images != ''
+      - name: Build, smoke-test, push every image
         env:
           GIT_SHA: ${{ gitea.sha }}
-          PUSH: ${{ (gitea.event_name != 'pull_request' && vars.PUSH_IMAGES != 'false') && '--push' || '' }}
-          IMAGES: ${{ steps.plan.outputs.images }}
-        run: scripts/build.sh --test $PUSH $IMAGES
+        run: scripts/build.sh --all --test --push
       - name: Log out of Docker Hub
         if: always()
         run: docker logout || true

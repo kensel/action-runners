@@ -32,8 +32,7 @@ images/
     test.sh             smoke test that runs inside the built image (cross-compiles C+Rust, runs it under qemu)
 scripts/
   build.sh              build / --test / --push one or more images (used by CI and locally)
-  changed-images.sh     works out which images changed since a commit, as JSON for the CI matrix
-.github/workflows/build-images.yml   GitHub Actions: build on PR; build+test+push on main, monthly, manual
+.github/workflows/build-images.yml   GitHub Actions: on a v* tag, build + test + push every image
 .gitea/workflows/build-images.yml    Gitea Actions: same thing
 examples/filecat-agent-jobs.yml      how filecat's Rust jobs switch over to the image
 ```
@@ -60,13 +59,29 @@ and use `runs-on: rust-cross`. A self-hosted runner pulls the image once and kee
 
 ## Publishing
 
-1. On Docker Hub, create an access token with Read & Write scope for `kensel/action-runners`.
-2. Add a repository secret `DOCKERHUB_TOKEN` (on GitHub, Gitea, or both). The optional variable
-   `DOCKERHUB_USERNAME` defaults to `kensel`.
-3. Push to `main`. Only the images whose `images/<name>/` changed get rebuilt. A change under
-   `scripts/` or to a workflow rebuilds all of them. A run triggered by hand
-   (`workflow_dispatch`, with optional image names) or by the monthly schedule rebuilds everything,
-   which picks up base-image security fixes.
+CI runs only when you push a `v*` tag. It builds, smoke-tests and pushes every image; commits and
+pull requests run nothing.
+
+```bash
+git tag v2026.11.0 && git push origin v2026.11.0
+```
+
+One-time setup on GitHub: the `dockerhub` environment (Settings → Environments) holds the
+credentials, and only `v*` tags may deploy to it.
+
+| Name | Kind | Value |
+|---|---|---|
+| `DOCKERHUB_USERNAME` | environment variable | `kensel` |
+| `DOCKERHUB_TOKEN` | environment secret | a Docker Hub access token with Read & Write scope |
+
+```bash
+gh secret set DOCKERHUB_TOKEN --env dockerhub --repo kensel/action-runners
+```
+
+The tag name is just the trigger. The published tags come from `TAG` in each `image.env`, so
+pushing a new git tag without changing `TAG` rebuilds the image (picking up base-image security
+fixes) and overwrites `rust-cross-<TAG>` with that build. The `-<sha>` tag from each build is never
+overwritten.
 
 On Gitea, the runner needs the Docker socket mounted into job containers; the comments at the top of
 [.gitea/workflows/build-images.yml](.gitea/workflows/build-images.yml) show how. If the repo is
@@ -86,7 +101,7 @@ docker login && scripts/build.sh --test --push rust-cross
 ## Bumping Rust
 
 1. In `images/rust-cross/image.env`, set `RUST_VERSION` and `TAG` to the new version.
-2. Merge. CI publishes `rust-cross-<new>`.
+2. Commit, then push a new `v*` tag. CI publishes `rust-cross-<new>`.
 3. In the projects that use the image, change `container: kensel/action-runners:rust-cross-<new>`.
 
 The old tag stays published, so projects can move to the new one whenever they are ready.
@@ -94,7 +109,7 @@ The old tag stays published, so projects can move to the new one whenever they a
 ## Adding an image
 
 Create `images/<name>/` with a `Dockerfile` and an `image.env` that has at least `TAG=`. Add a
-`test.sh` if you want a smoke test. CI picks the new directory up automatically.
+`test.sh` if you want a smoke test. The next `v*` tag builds it along with the others.
 
 Job-container images should run as root, the GitHub/Gitea default. Install `node` if JS actions
 will run on Gitea: act_runner uses the container's node, while GitHub mounts its own.
